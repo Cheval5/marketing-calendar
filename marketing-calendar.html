@@ -1,0 +1,665 @@
+<!doctype html>
+<html lang="en" class="h-full">
+ <head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Marketing Task Calendar</title>
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="https://cdn.jsdelivr.net/npm/lucide@0.263.0/dist/umd/lucide.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&amp;family=Playfair+Display:wght@600;700&amp;display=swap" rel="stylesheet">
+  <style>
+  html, body { height: 100%; margin: 0; }
+  * { font-family: 'DM Sans', sans-serif; }
+  .month-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  @media (max-width: 1024px) { .month-grid { grid-template-columns: repeat(3, 1fr); } }
+  @media (max-width: 768px) { .month-grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 480px) { .month-grid { grid-template-columns: 1fr; } }
+
+  .month-col {
+    min-height: 180px;
+    border-radius: 14px;
+    padding: 14px;
+    transition: box-shadow 0.2s, background 0.2s;
+  }
+  .month-col.drag-over {
+    box-shadow: inset 0 0 0 2px var(--accent);
+    background: rgba(255,107,53,0.06) !important;
+  }
+  .task-card {
+    border-radius: 10px;
+    padding: 10px 12px;
+    margin-bottom: 8px;
+    cursor: grab;
+    transition: transform 0.15s, box-shadow 0.15s, opacity 0.15s;
+    position: relative;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .task-card:active { cursor: grabbing; }
+  .task-card.dragging { opacity: 0.4; transform: scale(0.95); }
+  .task-card:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+  .task-card .actions { display: flex; gap: 4px; flex-shrink: 0; }
+
+  .color-dot { width: 14px; height: 14px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; transition: border-color 0.15s; }
+  .color-dot:hover, .color-dot.active { border-color: #333; }
+
+  .toast-msg {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    padding: 10px 20px; border-radius: 10px; font-size: 14px; font-weight: 500;
+    z-index: 1000; opacity: 0; transition: opacity 0.3s;
+    pointer-events: none;
+  }
+  .toast-msg.show { opacity: 1; }
+
+  .edit-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100;
+    display: flex; align-items: center; justify-content: center;
+    opacity: 0; pointer-events: none; transition: opacity 0.2s;
+  }
+  .edit-overlay.open { opacity: 1; pointer-events: all; }
+  .edit-modal { border-radius: 16px; padding: 24px; width: 90%; max-width: 400px; }
+  
+  .view-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100;
+    display: flex; align-items: center; justify-content: center;
+    opacity: 0; pointer-events: none; transition: opacity 0.2s;
+  }
+  .view-overlay.open { opacity: 1; pointer-events: all; }
+  .view-modal { border-radius: 16px; padding: 24px; width: 90%; max-width: 450px; }
+  .view-field { margin-bottom: 16px; }
+  .view-label { color: #8a8f9e; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+  .view-value { color: #e2e4ea; font-size: 14px; line-height: 1.5; word-break: break-word; }
+
+  .add-btn {
+    width: 100%; border: 2px dashed; border-radius: 8px; padding: 6px;
+    font-size: 13px; font-weight: 500; cursor: pointer;
+    transition: background 0.15s, border-color 0.15s; background: transparent;
+  }
+  .confirm-bar {
+    display: flex; gap: 6px; margin-top: 6px;
+  }
+  .confirm-bar button {
+    flex: 1; padding: 4px 8px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; border: none;
+  }
+</style>
+  <style>body { box-sizing: border-box; }</style>
+ </head>
+ <body class="h-full overflow-auto" style="background: #0f1117;">
+  <div id="app" class="h-full w-full" style="min-height: 100%;"><!-- Header -->
+   <div style="padding: 28px 32px 16px; display: flex; justify-content: space-between; align-items: flex-start;">
+    <div>
+     <h1 id="calTitle" style="font-family: 'Playfair Display', serif; font-size: 32px; font-weight: 700; color: #FF6B35;"></h1>
+     <p id="taskCount" style="color: #8a8f9e; font-size: 14px; margin-top: 4px;">0 campaigns</p>
+     <p style="color: #5f677c; font-size: 12px; margin-top: 4px;">Stored in this browser with localStorage</p>
+    </div>
+    <div style="display: flex; gap: 8px;"><button id="copyBtn" onclick="copyCalendar()" style="padding: 10px 16px; border-radius: 8px; background: #4ECDC4; color: #fff; border: none; cursor: pointer; font-weight: 600; font-size: 14px; display: flex; align-items: center; gap: 6px; transition: background 0.2s;">
+      <svg data-lucide="copy" style="width: 16px; height: 16px;" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewbox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect>
+      </svg> Copy </button> <button onclick="document.getElementById('importFile').click()" style="padding: 10px 16px; border-radius: 8px; background: #252833; color: #e2e4ea; border: 1px solid #3a3f4e; cursor: pointer; font-weight: 600; font-size: 14px; display: flex; align-items: center; gap: 6px; transition: background 0.2s;">
+      <svg data-lucide="upload" style="width: 16px; height: 16px;" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewbox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line>
+      </svg> Import CSV </button> <button id="saveBtn" onclick="downloadCalendar()" style="padding: 10px 16px; border-radius: 8px; background: #FF6B35; color: #fff; border: none; cursor: pointer; font-weight: 600; font-size: 14px; display: flex; align-items: center; gap: 6px; transition: background 0.2s;">
+      <svg data-lucide="download" style="width: 16px; height: 16px;" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewbox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line>
+      </svg> Export CSV </button>
+    </div>
+   </div><!-- Month Grid -->
+   <div class="month-grid" style="padding: 0 32px 32px;" id="monthGrid"></div>
+  </div><!-- Edit Modal -->
+  <input id="importFile" type="file" accept=".csv,text/csv" onchange="importCalendar(event)" hidden>
+  <div class="edit-overlay" id="editOverlay">
+   <div class="edit-modal" style="background: #1a1d27; max-width: 500px; max-height: 90vh; overflow-y: auto;">
+    <h3 style="color: #fff; font-size: 18px; font-weight: 600; margin-bottom: 16px;">Edit Campaign</h3>
+    <div style="margin-bottom: 12px;">
+     <label style="color: #8a8f9e; font-size: 12px; font-weight: 600; display: block; margin-bottom: 6px;">Date</label> <input id="editDate" type="date" style="width:100%;background:#252833;color:#fff;border:1px solid #3a3f4e;border-radius:10px;padding:10px;font-size:14px;outline:none;font-family:'DM Sans',sans-serif;box-sizing:border-box;accent-color:#FF6B35;color-scheme:dark;" placeholder="YYYY-MM-DD">
+    </div>
+    <div style="margin-bottom: 12px;">
+     <label style="color: #8a8f9e; font-size: 12px; font-weight: 600; display: block; margin-bottom: 6px;">Name</label> <input id="editName" type="text" placeholder="Campaign name" style="width:100%;background:#252833;color:#fff;border:1px solid #3a3f4e;border-radius:10px;padding:10px;font-size:14px;outline:none;font-family:'DM Sans',sans-serif;box-sizing:border-box;">
+    </div>
+    <div style="margin-bottom: 12px;">
+     <label style="color: #8a8f9e; font-size: 12px; font-weight: 600; display: block; margin-bottom: 6px;">Products</label> <textarea id="editProducts" rows="2" placeholder="List products" style="width:100%;background:#252833;color:#fff;border:1px solid #3a3f4e;border-radius:10px;padding:10px;font-size:14px;resize:none;outline:none;font-family:'DM Sans',sans-serif;box-sizing:border-box;"></textarea>
+    </div>
+    <div style="margin-bottom: 12px;">
+     <label style="color: #8a8f9e; font-size: 12px; font-weight: 600; display: block; margin-bottom: 6px;">Notes</label> <textarea id="editNotes" rows="3" placeholder="Add notes" style="width:100%;background:#252833;color:#fff;border:1px solid #3a3f4e;border-radius:10px;padding:10px;font-size:14px;resize:none;outline:none;font-family:'DM Sans',sans-serif;box-sizing:border-box;"></textarea>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:12px;" id="editColors"></div>
+    <div style="display:flex;gap:10px;margin-top:18px;justify-content:flex-end;"><button onclick="closeEdit()" style="padding:8px 18px;border-radius:8px;background:#252833;color:#8a8f9e;border:none;cursor:pointer;font-weight:600;">Cancel</button> <button onclick="saveEdit()" style="padding:8px 18px;border-radius:8px;background:#FF6B35;color:#fff;border:none;cursor:pointer;font-weight:600;">Save</button>
+    </div>
+   </div>
+  </div><!-- View Modal -->
+  <div class="view-overlay" id="viewOverlay">
+   <div class="view-modal" style="background: #1a1d27;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+     <h3 style="color: #fff; font-size: 18px; font-weight: 600; margin: 0;">Campaign Details</h3><button onclick="closeView()" style="background: none; border: none; cursor: pointer; color: #8a8f9e; padding: 0; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center;">
+      <svg data-lucide="x" style="width: 20px; height: 20px;" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewbox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line>
+      </svg></button>
+    </div>
+    <div class="view-field">
+     <div class="view-label">
+      Date
+     </div>
+     <div class="view-value" id="viewDate">
+      —
+     </div>
+    </div>
+    <div class="view-field">
+     <div class="view-label">
+      Campaign Name
+     </div>
+     <div class="view-value" id="viewName">
+      —
+     </div>
+    </div>
+    <div class="view-field">
+     <div class="view-label">
+      Products
+     </div>
+     <div class="view-value" id="viewProducts" style="white-space: pre-wrap;">
+      —
+     </div>
+    </div>
+    <div class="view-field">
+     <div class="view-label">
+      Notes
+     </div>
+     <div class="view-value" id="viewNotes" style="white-space: pre-wrap;">
+      —
+     </div>
+    </div>
+    <div class="view-field">
+     <div class="view-label">
+      Category Color
+     </div>
+     <div id="viewColor" style="width: 24px; height: 24px; border-radius: 50%; border: 2px solid #3a3f4e;"></div>
+    </div><button onclick="closeView()" style="width: 100%; padding: 10px; margin-top: 16px; border-radius: 8px; background: #252833; color: #8a8f9e; border: none; cursor: pointer; font-weight: 600;">Close</button>
+   </div>
+  </div><!-- Toast -->
+  <div class="toast-msg" id="toast" style="background:#FF6B35;color:#fff;"></div>
+  <script>
+const STORAGE_KEY = 'marketing-calendar.tasks.v2';
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const COLORS = ['#FF6B35','#4ECDC4','#A78BFA','#F59E0B','#EC4899','#34D399'];
+
+const defaultConfig = {
+  calendar_title: 'Marketing Calendar 2026',
+  background_color: '#0f1117',
+  surface_color: '#1a1d27',
+  text_color: '#e2e4ea',
+  primary_action_color: '#FF6B35',
+  secondary_action_color: '#8a8f9e',
+  font_family: 'DM Sans',
+  font_size: 14
+};
+
+let allTasks = [];
+let editingTask = null;
+let editColor = COLORS[0];
+let dragId = null;
+let deleteConfirmId = null;
+
+function generateId() {
+  if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+    return window.crypto.randomUUID();
+  }
+  return `task-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function normalizeMonthValue(value) {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return Math.max(0, Math.min(MONTHS.length - 1, Math.trunc(value)));
+  }
+
+  const raw = String(value ?? '').trim();
+  if (!raw) return 0;
+
+  if (/^\d+$/.test(raw)) {
+    return Math.max(0, Math.min(MONTHS.length - 1, parseInt(raw, 10)));
+  }
+
+  const index = MONTHS.findIndex(month => month.toLowerCase() === raw.toLowerCase());
+  return index >= 0 ? index : 0;
+}
+
+function normalizeTask(task = {}, index = 0) {
+  const name = String(task.name ?? task.text ?? 'Campaign').trim() || 'Campaign';
+  const orderValue = Number(task.order);
+
+  return {
+    __backendId: String(task.__backendId ?? task.id ?? generateId()),
+    month: normalizeMonthValue(task.month),
+    order: Number.isFinite(orderValue) ? orderValue : Date.now() + index,
+    color: typeof task.color === 'string' && task.color ? task.color : COLORS[0],
+    date: String(task.date ?? '').trim(),
+    name,
+    text: name,
+    products: String(task.products ?? '').trim(),
+    notes: String(task.notes ?? '').trim()
+  };
+}
+
+function loadTasksFromStorage() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return [];
+
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+
+    return parsed.map((task, index) => normalizeTask(task, index));
+  } catch (error) {
+    console.error('Failed to load local calendar data:', error);
+    return [];
+  }
+}
+
+function persistTasks() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(allTasks));
+    return true;
+  } catch (error) {
+    console.error('Failed to save local calendar data:', error);
+    showToast('Local storage is unavailable');
+    return false;
+  }
+}
+
+function refreshTasks(tasks) {
+  allTasks = tasks.map((task, index) => normalizeTask(task, index));
+  renderTasks();
+}
+
+function upsertTask(updatedTask) {
+  const normalized = normalizeTask(updatedTask);
+  const nextTasks = allTasks.some(task => task.__backendId === normalized.__backendId)
+    ? allTasks.map(task => task.__backendId === normalized.__backendId ? normalized : task)
+    : [...allTasks, normalized];
+
+  allTasks = nextTasks;
+  persistTasks();
+  renderTasks();
+  return normalized;
+}
+
+function deleteTask(taskId) {
+  allTasks = allTasks.filter(task => task.__backendId !== taskId);
+  persistTasks();
+  renderTasks();
+}
+
+function nextOrder(month) {
+  const monthTasks = allTasks.filter(task => task.month === month);
+  if (!monthTasks.length) return Date.now();
+  return Math.max(...monthTasks.map(task => Number(task.order) || 0)) + 1;
+}
+
+// Build month grid
+function buildGrid() {
+  const grid = document.getElementById('monthGrid');
+  grid.innerHTML = '';
+  MONTHS.forEach((m, i) => {
+    const col = document.createElement('div');
+    col.className = 'month-col';
+    col.dataset.month = i;
+    col.style.background = defaultConfig.surface_color;
+    col.innerHTML = `
+      <div style="font-weight:600;font-size:13px;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;color:${defaultConfig.secondary_action_color};">${m}</div>
+      <div class="task-list" data-month="${i}"></div>
+      <button class="add-btn" data-month="${i}" style="color:${defaultConfig.secondary_action_color};border-color:${defaultConfig.secondary_action_color}33;">+ Add Campaign</button>
+    `;
+    // Drag events
+    col.addEventListener('dragover', e => { e.preventDefault(); col.classList.add('drag-over'); });
+    col.addEventListener('dragleave', () => col.classList.remove('drag-over'));
+    col.addEventListener('drop', async e => {
+      e.preventDefault(); 
+      col.classList.remove('drag-over');
+      if (!dragId) return;
+      const task = allTasks.find(t => t.__backendId === dragId);
+      if (task) {
+        upsertTask({ ...task, month: i, order: nextOrder(i) });
+      }
+      dragId = null;
+    });
+    // Add button
+    col.querySelector('.add-btn').addEventListener('click', () => addTask(i));
+    grid.appendChild(col);
+  });
+}
+
+async function addTask(month) {
+  if (allTasks.length >= 999) { showToast('Task limit reached (999)'); return; }
+  const btn = document.querySelector(`.add-btn[data-month="${month}"]`);
+  btn.disabled = true; btn.textContent = '...';
+  const task = upsertTask({
+    __backendId: generateId(),
+    month,
+    order: nextOrder(month),
+    color: COLORS[Math.floor(Math.random() * COLORS.length)],
+    date: '',
+    name: 'Campaign',
+    text: 'Campaign',
+    products: '',
+    notes: ''
+  });
+  btn.disabled = false; btn.textContent = '+ Add Campaign';
+  openEdit(task);
+}
+
+function renderTasks() {
+  document.querySelectorAll('.task-list').forEach(list => {
+    const month = parseInt(list.dataset.month);
+    const tasks = allTasks.filter(t => normalizeMonthValue(t.month) === month).sort((a,b) => a.order - b.order);
+    const existing = new Map([...list.children].map(el => [el.dataset.id, el]));
+    const seen = new Set();
+
+    tasks.forEach(t => {
+      seen.add(t.__backendId);
+      if (existing.has(t.__backendId)) {
+        const el = existing.get(t.__backendId);
+        el.querySelector('.task-text').textContent = t.text;
+        el.style.borderLeft = `4px solid ${t.color || COLORS[0]}`;
+      } else {
+        list.appendChild(createCard(t));
+      }
+    });
+    existing.forEach((el, id) => { if (!seen.has(id)) el.remove(); });
+  });
+  document.getElementById('taskCount').textContent = `${allTasks.length} campaign${allTasks.length!==1?'s':''}`;
+}
+
+function createCard(t) {
+  const card = document.createElement('div');
+  card.className = 'task-card';
+  card.dataset.id = t.__backendId;
+  card.draggable = true;
+  card.style.background = '#252833';
+  card.style.borderLeft = `4px solid ${t.color || COLORS[0]}`;
+  card.style.color = defaultConfig.text_color;
+
+  card.innerHTML = `
+    <div class="task-text" style="font-size:13px;line-height:1.4;word-break:break-word;flex:1;min-width:0;">${escHtml(t.text)}</div>
+    <div class="actions" style="display:flex;gap:4px;flex-shrink:0;">
+      <button class="view-btn" style="background:none;border:none;cursor:pointer;padding:2px;color:#8a8f9e;"><svg data-lucide="eye" style="width:14px;height:14px;" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg></button>
+      <button class="edit-btn" style="background:none;border:none;cursor:pointer;padding:2px;color:#8a8f9e;"><svg data-lucide="pencil" style="width:14px;height:14px;" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg></button>
+      <button class="del-btn" style="background:none;border:none;cursor:pointer;padding:2px;color:#8a8f9e;"><svg data-lucide="trash-2" style="width:14px;height:14px;" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg></button>
+    </div>
+  `;
+
+  card.addEventListener('dragstart', e => { dragId = t.__backendId; card.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; });
+  card.addEventListener('dragend', () => { card.classList.remove('dragging'); dragId = null; });
+  card.querySelector('.edit-btn').addEventListener('click', e => { e.stopPropagation(); openEdit(t); });
+  card.querySelector('.view-btn').addEventListener('click', e => { e.stopPropagation(); openView(t); });
+  card.querySelector('.del-btn').addEventListener('click', e => {
+    e.stopPropagation();
+    if (deleteConfirmId === t.__backendId) {
+      // already confirming, do nothing
+      return;
+    }
+    showDeleteConfirm(card, t);
+  });
+  card.addEventListener('click', () => openEdit(t));
+  return card;
+}
+
+function showDeleteConfirm(card, t) {
+  // Remove any previous confirm bars
+  document.querySelectorAll('.confirm-bar').forEach(b => b.remove());
+  deleteConfirmId = t.__backendId;
+  const bar = document.createElement('div');
+  bar.className = 'confirm-bar';
+  bar.innerHTML = `
+    <button style="background:#ef4444;color:#fff;">Delete</button>
+    <button style="background:#3a3f4e;color:#ccc;">Cancel</button>
+  `;
+  bar.children[0].addEventListener('click', async e => {
+    e.stopPropagation();
+    bar.children[0].disabled = true; bar.children[0].textContent = '...';
+    deleteTask(t.__backendId);
+    showToast('Campaign deleted');
+    deleteConfirmId = null;
+  });
+  bar.children[1].addEventListener('click', e => { e.stopPropagation(); bar.remove(); deleteConfirmId = null; });
+  card.appendChild(bar);
+}
+
+function openEdit(t) {
+  editingTask = t;
+  editColor = t.color || COLORS[0];
+  
+  // Ensure all values are strings and not undefined
+  document.getElementById('editDate').value = t.date ? String(t.date) : '';
+  document.getElementById('editName').value = t.name ? String(t.name) : '';
+  document.getElementById('editProducts').value = t.products ? String(t.products) : '';
+  document.getElementById('editNotes').value = t.notes ? String(t.notes) : '';
+  
+  renderEditColors();
+  document.getElementById('editOverlay').classList.add('open');
+  
+  // Force focus to ensure fields are visible
+  setTimeout(() => {
+    document.getElementById('editDate').focus();
+  }, 50);
+}
+
+function renderEditColors() {
+  const container = document.getElementById('editColors');
+  container.innerHTML = '';
+  COLORS.forEach(c => {
+    const dot = document.createElement('div');
+    dot.className = 'color-dot' + (c===editColor?' active':'');
+    dot.style.background = c;
+    dot.addEventListener('click', () => { editColor = c; renderEditColors(); });
+    container.appendChild(dot);
+  });
+}
+
+function closeEdit() {
+  document.getElementById('editOverlay').classList.remove('open');
+  editingTask = null;
+}
+
+function openView(t) {
+  document.getElementById('viewDate').textContent = t.date && String(t.date).trim() ? String(t.date) : '—';
+  document.getElementById('viewName').textContent = t.name && String(t.name).trim() ? String(t.name) : '—';
+  document.getElementById('viewProducts').textContent = t.products && String(t.products).trim() ? String(t.products) : '—';
+  document.getElementById('viewNotes').textContent = t.notes && String(t.notes).trim() ? String(t.notes) : '—';
+  document.getElementById('viewColor').style.background = t.color || COLORS[0];
+  document.getElementById('viewOverlay').classList.add('open');
+  
+  // Debug: log the task data
+  console.log('Viewing task:', t);
+}
+
+function closeView() {
+  document.getElementById('viewOverlay').classList.remove('open');
+}
+
+async function saveEdit() {
+  if (!editingTask) return;
+  const date = document.getElementById('editDate').value || '';
+  const name = document.getElementById('editName').value.trim() || 'Untitled';
+  const products = document.getElementById('editProducts').value.trim() || '';
+  const notes = document.getElementById('editNotes').value.trim() || '';
+  const btn = document.querySelector('.edit-modal button:last-child');
+  btn.disabled = true; btn.textContent = '...';
+  btn.disabled = false; btn.textContent = 'Save';
+  editingTask = upsertTask({ ...editingTask, text: name, date, name, products, notes, color: editColor });
+  closeEdit();
+  showToast('Campaign saved!');
+}
+
+function showToast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 2500);
+}
+
+function escHtml(s) { const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
+
+function buildCSV() {
+  let csvContent = 'Month,Campaign Name,Date,Products,Notes,Category\n';
+  
+  MONTHS.forEach((month, idx) => {
+    const tasks = allTasks.filter(t => t.month === idx).sort((a,b) => a.order - b.order);
+    tasks.forEach(t => {
+      const name = t.name || '';
+      const date = t.date || '';
+      const products = t.products || '';
+      const notes = t.notes || '';
+      const colorName = t.color === '#FF6B35' ? 'Orange' : t.color === '#4ECDC4' ? 'Teal' : t.color === '#A78BFA' ? 'Purple' : t.color === '#F59E0B' ? 'Amber' : t.color === '#EC4899' ? 'Pink' : 'Green';
+      
+      csvContent += `"${csvEscape(month)}","${csvEscape(name)}","${csvEscape(date)}","${csvEscape(products)}","${csvEscape(notes)}","${csvEscape(colorName)}"\n`;
+    });
+  });
+  return csvContent;
+}
+
+function downloadCalendar() {
+  const csvContent = '\uFEFF' + buildCSV();
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `marketing-calendar-${new Date().toISOString().split('T')[0]}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+  showToast('Excel-friendly CSV exported!');
+}
+
+function copyCalendar() {
+  const csvContent = buildCSV();
+  navigator.clipboard.writeText(csvContent).then(() => {
+    showToast('Calendar copied to clipboard!');
+  }).catch(() => {
+    showToast('Failed to copy');
+  });
+}
+
+function csvEscape(str) {
+  return String(str).replace(/"/g, '""');
+}
+
+function parseCsv(text) {
+  const rows = [];
+  let row = [];
+  let value = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < text.length; i += 1) {
+    const char = text[i];
+    const next = text[i + 1];
+
+    if (char === '"') {
+      if (inQuotes && next === '"') {
+        value += '"';
+        i += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+
+    if (char === ',' && !inQuotes) {
+      row.push(value);
+      value = '';
+      continue;
+    }
+
+    if ((char === '\n' || char === '\r') && !inQuotes) {
+      if (char === '\r' && next === '\n') i += 1;
+      row.push(value);
+      if (row.some(cell => String(cell).trim() !== '')) rows.push(row);
+      row = [];
+      value = '';
+      continue;
+    }
+
+    value += char;
+  }
+
+  row.push(value);
+  if (row.some(cell => String(cell).trim() !== '')) rows.push(row);
+  return rows;
+}
+
+function importCalendar(event) {
+  const file = event.target.files && event.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const rows = parseCsv(String(reader.result || ''));
+      if (!rows.length) throw new Error('The CSV file is empty.');
+
+      const imported = rows
+        .slice(1)
+        .filter(row => row.some(cell => String(cell).trim() !== ''))
+        .map((row, index) => normalizeTask({
+          __backendId: generateId(),
+          month: row[0],
+          name: row[1] || 'Campaign',
+          text: row[1] || 'Campaign',
+          date: row[2] || '',
+          products: row[3] || '',
+          notes: row[4] || '',
+          color: COLORS[index % COLORS.length],
+          order: Date.now() + index
+        }, index));
+
+      if (!imported.length) throw new Error('No campaign rows were found in the CSV.');
+
+      const shouldReplace = window.confirm('Replace current campaigns with this CSV? Click Cancel to append the imported campaigns.');
+      refreshTasks(shouldReplace ? imported : [...allTasks, ...imported]);
+      persistTasks();
+      showToast(`${imported.length} campaign${imported.length === 1 ? '' : 's'} imported`);
+    } catch (error) {
+      console.error('CSV import failed:', error);
+      showToast(error.message || 'CSV import failed');
+    } finally {
+      event.target.value = '';
+    }
+  };
+
+  reader.onerror = () => {
+    showToast('Could not read the CSV file');
+    event.target.value = '';
+  };
+
+  reader.readAsText(file);
+}
+
+// Apply config to UI
+function applyConfig(config) {
+  const c = { ...defaultConfig, ...config };
+  document.body.style.background = c.background_color;
+  document.getElementById('calTitle').textContent = c.calendar_title;
+  document.getElementById('calTitle').style.color = c.primary_action_color;
+  document.getElementById('calTitle').style.fontFamily = `${c.font_family}, 'Playfair Display', serif`;
+  document.getElementById('taskCount').style.color = c.secondary_action_color;
+  document.getElementById('taskCount').style.fontSize = `${c.font_size}px`;
+  document.getElementById('calTitle').style.fontSize = `${c.font_size * 2.2}px`;
+
+  document.querySelectorAll('.month-col').forEach(col => {
+    col.style.background = c.surface_color;
+    col.querySelector('div').style.color = c.secondary_action_color;
+  });
+  document.querySelectorAll('.task-card').forEach(card => {
+    card.style.color = c.text_color;
+  });
+  document.querySelectorAll('.add-btn').forEach(btn => {
+    btn.style.color = c.secondary_action_color;
+    btn.style.borderColor = c.secondary_action_color + '33';
+  });
+  document.documentElement.style.setProperty('--accent', c.primary_action_color);
+}
+
+(async () => {
+  buildGrid();
+  applyConfig(defaultConfig);
+  refreshTasks(loadTasksFromStorage());
+  lucide.createIcons();
+})();
+</script>
+ <script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'9f05e9e9b36e5413',t:'MTc3Njg3NDM4NS4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</html>
