@@ -652,7 +652,7 @@
      <div class="brand-title-block">
       <h1 id="calTitle" style="font-family: 'Proxima Nova', 'Metropolis', Arial, sans-serif; font-size: 32px; font-weight: 700; color: #004E78;"></h1>
       <p id="taskCount" style="color: #4A4A49; font-size: 14px; margin-top: 4px;">0 campaigns</p>
-      <p style="color: #898989; font-size: 12px; margin-top: 4px;">Sign in with Google for shared Firebase sync</p>
+      <p style="color: #898989; font-size: 12px; margin-top: 4px;">Shared campaigns are stored in Firebase Firestore</p>
       <p id="lastSavedNote" style="color: #898989; font-size: 12px; margin-top: 4px;">Not saved yet</p>
      </div>
     </div>
@@ -660,7 +660,7 @@
      <div class="auth-box">
       <div class="auth-label">Account</div>
       <div class="auth-user" id="authUserLabel">Not signed in</div>
-      <div class="auth-helper" id="authHelperText">Shared editing requires Google sign-in</div>
+      <div class="auth-helper" id="authHelperText">Sign in to view and edit shared campaigns</div>
       <button class="auth-button" type="button" id="authActionBtn" onclick="signInWithGoogle()">Sign In With Google</button>
      </div>
      <div style="display: flex; gap: 8px;"><button onclick="document.getElementById('importFile').click()" style="padding: 10px 16px; border-radius: 8px; background: #004E78; color: #FFFFFF; border: 1px solid #004E78; cursor: pointer; font-weight: 600; font-size: 14px; display: flex; align-items: center; gap: 6px; transition: background 0.2s;">
@@ -868,8 +868,6 @@
   <script src="https://www.gstatic.com/firebasejs/12.12.1/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore-compat.js"></script>
   <script>
-const STORAGE_KEY = 'marketing-calendar.tasks.v2';
-const LAST_SAVED_KEY = 'marketing-calendar.last-saved.v2';
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyCW3LHbfqyaSfoTi7lq0QGuApGKlry7y-I",
   authDomain: "cd-planning-tools.firebaseapp.com",
@@ -944,7 +942,7 @@ function updateAuthUi() {
     actionBtn.setAttribute('onclick', 'signOutUser()');
   } else {
     userLabel.textContent = 'Not signed in';
-    helperText.textContent = 'Shared editing requires Google sign-in';
+    helperText.textContent = 'Sign in to view and edit shared campaigns';
     actionBtn.textContent = 'Sign In With Google';
     actionBtn.setAttribute('onclick', 'signInWithGoogle()');
   }
@@ -1038,35 +1036,6 @@ function normalizeTask(task = {}, index = 0) {
   };
 }
 
-function loadTasksFromStorage() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
-
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-
-    return parsed.map((task, index) => normalizeTask(task, index));
-  } catch (error) {
-    console.error('Failed to load local calendar data:', error);
-    return [];
-  }
-}
-
-function cacheTasksLocally() {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(allTasks));
-    const savedAt = new Date().toISOString();
-    localStorage.setItem(LAST_SAVED_KEY, savedAt);
-    setLastSavedNote(savedAt);
-    return true;
-  } catch (error) {
-    console.error('Failed to save local calendar data:', error);
-    showToast('Local storage is unavailable');
-    return false;
-  }
-}
-
 function getFirestoreCollection() {
   if (!firestoreDb) return null;
   return firestoreDb.collection(FIRESTORE_COLLECTION);
@@ -1087,9 +1056,10 @@ async function saveTaskToFirestore(task) {
 
   try {
     await collection.doc(task.__backendId).set(getFirestoreTaskPayload(task), { merge: true });
+    setLastSavedNote(new Date().toISOString());
   } catch (error) {
     console.error('Failed to save campaign to Firestore:', error);
-    showToast('Saved locally only. Firestore unavailable.');
+    showToast('Could not save to Firestore');
   }
 }
 
@@ -1117,21 +1087,15 @@ async function syncAllTasksToFirestore() {
       batch.set(collection.doc(task.__backendId), getFirestoreTaskPayload(task), { merge: true });
     });
     await batch.commit();
+    setLastSavedNote(new Date().toISOString());
   } catch (error) {
     console.error('Failed to sync campaigns to Firestore:', error);
-    showToast('Saved locally only. Firestore sync failed.');
+    showToast('Firestore sync failed');
   }
-}
-
-function persistTasks() {
-  const cached = cacheTasksLocally();
-  syncAllTasksToFirestore();
-  return cached;
 }
 
 function refreshTasks(tasks) {
   allTasks = tasks.map((task, index) => normalizeTask(task, index));
-  cacheTasksLocally();
   renderTasks();
 }
 
@@ -1152,7 +1116,6 @@ function upsertTask(updatedTask) {
     : [...allTasks, normalized];
 
   allTasks = nextTasks;
-  cacheTasksLocally();
   saveTaskToFirestore(normalized);
   renderTasks();
   return normalized;
@@ -1490,6 +1453,16 @@ function renderDeletedPanel() {
   const list = document.getElementById('deletedList');
   const subtitle = document.getElementById('deletedSubtitle');
   if (!list || !subtitle) return;
+
+  if (!isSignedIn()) {
+    subtitle.textContent = 'Sign in to view deleted campaigns';
+    list.innerHTML = '';
+    const empty = document.createElement('div');
+    empty.className = 'deleted-empty';
+    empty.textContent = 'No deleted campaigns visible while signed out.';
+    list.appendChild(empty);
+    return;
+  }
 
   const deletedTasks = getDeletedTasks();
   subtitle.textContent = deletedTasks.length
@@ -2033,8 +2006,9 @@ function importCalendar(event) {
       if (!imported.length) throw new Error('No campaign rows were found in the CSV.');
 
       const shouldReplace = window.confirm('Replace current campaigns with this CSV? Click Cancel to append the imported campaigns.');
-      refreshTasks(shouldReplace ? imported : [...allTasks, ...imported]);
-      persistTasks();
+      const nextTasks = shouldReplace ? imported : [...allTasks, ...imported];
+      refreshTasks(nextTasks);
+      syncAllTasksToFirestore();
       showToast(`${imported.length} campaign${imported.length === 1 ? '' : 's'} imported`);
     } catch (error) {
       console.error('CSV import failed:', error);
@@ -2078,7 +2052,9 @@ function initializeFirestoreSync() {
 
       if (!currentUser) {
         isFirestoreReady = false;
-        refreshTasks(loadTasksFromStorage());
+        allTasks = [];
+        setLastSavedNote('');
+        renderTasks();
         return;
       }
 
@@ -2093,9 +2069,13 @@ function initializeFirestoreSync() {
 
         if (remoteTasks.length) {
           allTasks = remoteTasks;
-          cacheTasksLocally();
           renderTasks();
-          setLastSavedNote(localStorage.getItem(LAST_SAVED_KEY));
+          const latestUpdatedAt = remoteTasks
+            .map(task => task.updatedAt)
+            .filter(Boolean)
+            .sort()
+            .pop();
+          setLastSavedNote(latestUpdatedAt || '');
         } else if (allTasks.length) {
           isApplyingRemoteSnapshot = false;
           syncAllTasksToFirestore();
@@ -2107,8 +2087,7 @@ function initializeFirestoreSync() {
         isApplyingRemoteSnapshot = false;
         console.error('Firestore live sync failed:', error);
         isFirestoreReady = false;
-        showToast('Firestore unavailable. Using local data.');
-        refreshTasks(loadTasksFromStorage());
+        showToast('Firestore unavailable');
       });
     });
 
@@ -2184,9 +2163,9 @@ function applyConfig(config) {
   initUpcomingToggle();
   initQuarterToggle();
   initDeletedToggle();
-  setLastSavedNote(localStorage.getItem(LAST_SAVED_KEY));
+  setLastSavedNote('');
   applyConfig(defaultConfig);
-  refreshTasks(loadTasksFromStorage());
+  renderTasks();
   initializeFirestoreSync();
   lucide.createIcons();
 })();
