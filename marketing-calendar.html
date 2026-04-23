@@ -1159,21 +1159,22 @@ function upsertTask(updatedTask) {
 }
 
 function deleteTask(taskId) {
-  if (!requireSignedIn('delete campaigns')) return;
+  if (!requireSignedIn('delete campaigns')) return false;
   const task = allTasks.find(item => item.__backendId === taskId);
-  if (!task) return;
+  if (!task) return false;
   upsertTask({
     ...task,
     deleted: true,
     deletedAt: new Date().toISOString(),
     deletedBy: currentUser?.email || currentUser?.uid || ''
   });
+  return true;
 }
 
 function restoreTask(taskId) {
-  if (!requireSignedIn('restore campaigns')) return;
+  if (!requireSignedIn('restore campaigns')) return false;
   const task = allTasks.find(item => item.__backendId === taskId);
-  if (!task) return;
+  if (!task) return false;
   upsertTask({
     ...task,
     deleted: false,
@@ -1181,6 +1182,7 @@ function restoreTask(taskId) {
     deletedBy: ''
   });
   showToast('Campaign restored');
+  return true;
 }
 
 function nextOrder(month) {
@@ -1775,8 +1777,8 @@ function showDeleteConfirm(card, t) {
   bar.children[0].addEventListener('click', async e => {
     e.stopPropagation();
     bar.children[0].disabled = true; bar.children[0].textContent = '...';
-    deleteTask(t.__backendId);
-    showToast('Campaign moved to Recently Deleted');
+    const deleted = deleteTask(t.__backendId);
+    if (deleted) showToast('Campaign moved to Recently Deleted');
     deleteConfirmId = null;
   });
   bar.children[1].addEventListener('click', e => { e.stopPropagation(); bar.remove(); deleteConfirmId = null; });
