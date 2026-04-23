@@ -456,6 +456,52 @@
 
   .color-dot { width: 14px; height: 14px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; transition: border-color 0.15s; }
   .color-dot:hover, .color-dot.active { border-color: var(--cd-regal-blue); }
+  .header-actions {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+  .auth-box {
+    min-width: 220px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(0, 78, 120, 0.12);
+    background: rgba(0, 78, 120, 0.03);
+  }
+  .auth-label {
+    color: var(--cd-regal-blue);
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .auth-user {
+    margin-top: 4px;
+    color: var(--cd-dark-grey);
+    font-size: 13px;
+    font-weight: 700;
+    word-break: break-word;
+  }
+  .auth-helper {
+    margin-top: 3px;
+    color: var(--cd-grey);
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .auth-button {
+    margin-top: 8px;
+    min-height: 36px;
+    padding: 0 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(0, 78, 120, 0.18);
+    background: #FFFFFF;
+    color: var(--cd-regal-blue);
+    font-size: 13px;
+    font-weight: 800;
+    cursor: pointer;
+  }
 
   .toast-msg {
     position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
@@ -516,15 +562,23 @@
      <div class="brand-title-block">
       <h1 id="calTitle" style="font-family: 'Proxima Nova', 'Metropolis', Arial, sans-serif; font-size: 32px; font-weight: 700; color: #004E78;"></h1>
       <p id="taskCount" style="color: #4A4A49; font-size: 14px; margin-top: 4px;">0 campaigns</p>
-      <p style="color: #898989; font-size: 12px; margin-top: 4px;">Synced with Firebase Firestore, with local backup</p>
+      <p style="color: #898989; font-size: 12px; margin-top: 4px;">Sign in with Google for shared Firebase sync</p>
       <p id="lastSavedNote" style="color: #898989; font-size: 12px; margin-top: 4px;">Not saved yet</p>
      </div>
     </div>
-    <div style="display: flex; gap: 8px;"><button onclick="document.getElementById('importFile').click()" style="padding: 10px 16px; border-radius: 8px; background: #004E78; color: #FFFFFF; border: 1px solid #004E78; cursor: pointer; font-weight: 600; font-size: 14px; display: flex; align-items: center; gap: 6px; transition: background 0.2s;">
+    <div class="header-actions">
+     <div class="auth-box">
+      <div class="auth-label">Account</div>
+      <div class="auth-user" id="authUserLabel">Not signed in</div>
+      <div class="auth-helper" id="authHelperText">Shared editing requires Google sign-in</div>
+      <button class="auth-button" type="button" id="authActionBtn" onclick="signInWithGoogle()">Sign In With Google</button>
+     </div>
+     <div style="display: flex; gap: 8px;"><button onclick="document.getElementById('importFile').click()" style="padding: 10px 16px; border-radius: 8px; background: #004E78; color: #FFFFFF; border: 1px solid #004E78; cursor: pointer; font-weight: 600; font-size: 14px; display: flex; align-items: center; gap: 6px; transition: background 0.2s;">
       <svg data-lucide="upload" style="width: 16px; height: 16px;" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewbox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line>
       </svg> Import Backup </button> <button id="saveBtn" onclick="downloadCalendar()" style="padding: 10px 16px; border-radius: 8px; background: #00A7E1; color: #FFFFFF; border: none; cursor: pointer; font-weight: 600; font-size: 14px; display: flex; align-items: center; gap: 6px; transition: background 0.2s;">
       <svg data-lucide="download" style="width: 16px; height: 16px;" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewbox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line>
       </svg> Download Excel CSV </button>
+     </div>
     </div>
    </div><!-- Month Grid -->
    <div class="filter-panel is-collapsed">
@@ -711,6 +765,7 @@
   </div><!-- Toast -->
   <div class="toast-msg" id="toast" style="background:#004E78;color:#fff;"></div>
   <script src="https://www.gstatic.com/firebasejs/12.12.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/12.12.1/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore-compat.js"></script>
   <script>
 const STORAGE_KEY = 'marketing-calendar.tasks.v2';
@@ -747,6 +802,8 @@ let editColor = COLORS[0];
 let dragId = null;
 let deleteConfirmId = null;
 let pendingHighlightId = null;
+let authInstance = null;
+let currentUser = null;
 let firestoreDb = null;
 let firestoreUnsubscribe = null;
 let isFirestoreReady = false;
@@ -762,6 +819,35 @@ function setLastSavedNote(value) {
   const note = document.getElementById('lastSavedNote');
   if (!note) return;
   note.textContent = value ? formatSavedTime(value) : 'Not saved yet';
+}
+
+function isSignedIn() {
+  return Boolean(currentUser);
+}
+
+function requireSignedIn(actionText = 'edit shared campaigns') {
+  if (isSignedIn()) return true;
+  showToast(`Sign in with Google to ${actionText}`);
+  return false;
+}
+
+function updateAuthUi() {
+  const userLabel = document.getElementById('authUserLabel');
+  const helperText = document.getElementById('authHelperText');
+  const actionBtn = document.getElementById('authActionBtn');
+  if (!userLabel || !helperText || !actionBtn) return;
+
+  if (currentUser) {
+    userLabel.textContent = currentUser.email || currentUser.displayName || 'Signed in';
+    helperText.textContent = 'Shared Firestore sync is enabled';
+    actionBtn.textContent = 'Sign Out';
+    actionBtn.setAttribute('onclick', 'signOutUser()');
+  } else {
+    userLabel.textContent = 'Not signed in';
+    helperText.textContent = 'Shared editing requires Google sign-in';
+    actionBtn.textContent = 'Sign In With Google';
+    actionBtn.setAttribute('onclick', 'signInWithGoogle()');
+  }
 }
 
 function generateId() {
@@ -960,6 +1046,7 @@ function upsertTask(updatedTask) {
 }
 
 function deleteTask(taskId) {
+  if (!requireSignedIn('delete campaigns')) return;
   allTasks = allTasks.filter(task => task.__backendId !== taskId);
   cacheTasksLocally();
   deleteTaskFromFirestore(taskId);
@@ -1393,6 +1480,7 @@ function buildGrid() {
       e.preventDefault(); 
       col.classList.remove('drag-over');
       if (!dragId) return;
+      if (!requireSignedIn('reorder campaigns')) { dragId = null; return; }
       const task = allTasks.find(t => t.__backendId === dragId);
       if (task) {
         upsertTask({ ...task, month: i, order: nextOrder(i) });
@@ -1406,6 +1494,7 @@ function buildGrid() {
 }
 
 async function addTask(month) {
+  if (!requireSignedIn('add campaigns')) return;
   if (allTasks.length >= 999) { showToast('Task limit reached (999)'); return; }
   const task = {
     __backendId: generateId(),
@@ -1512,6 +1601,7 @@ function showDeleteConfirm(card, t) {
 }
 
 function openEdit(t) {
+  if (!requireSignedIn('edit campaigns')) return;
   editingTask = t;
   editColor = t.color || COLORS[0];
   
@@ -1579,6 +1669,7 @@ function closeView() {
 
 async function saveEdit() {
   if (!editingTask) return;
+  if (!requireSignedIn('save campaigns')) return;
   const month = parseInt(document.getElementById('editMonth').value, 10) || 0;
   const date = document.getElementById('editDate').value || '';
   const name = document.getElementById('editName').value.trim() || 'Untitled';
@@ -1709,6 +1800,10 @@ function getCsvValue(row, headerIndex, fallbackIndex) {
 }
 
 function importCalendar(event) {
+  if (!requireSignedIn('import campaigns')) {
+    event.target.value = '';
+    return;
+  }
   const file = event.target.files && event.target.files[0];
   if (!file) return;
 
@@ -1783,35 +1878,53 @@ function initializeFirestoreSync() {
       firebase.initializeApp(FIREBASE_CONFIG);
     }
 
+    authInstance = firebase.auth();
     firestoreDb = firebase.firestore();
-    isFirestoreReady = true;
+    updateAuthUi();
 
-    const collection = getFirestoreCollection();
-    firestoreUnsubscribe = collection.orderBy('order').onSnapshot(snapshot => {
-      isApplyingRemoteSnapshot = true;
-      const remoteTasks = snapshot.docs.map((doc, index) => normalizeTask({
-        __backendId: doc.id,
-        ...doc.data()
-      }, index));
+    authInstance.onAuthStateChanged(user => {
+      currentUser = user;
+      updateAuthUi();
 
-      if (remoteTasks.length) {
-        allTasks = remoteTasks;
-        cacheTasksLocally();
-        renderTasks();
-        setLastSavedNote(localStorage.getItem(LAST_SAVED_KEY));
-      } else if (allTasks.length) {
-        isApplyingRemoteSnapshot = false;
-        syncAllTasksToFirestore();
-      } else {
-        renderTasks();
+      if (firestoreUnsubscribe) {
+        firestoreUnsubscribe();
+        firestoreUnsubscribe = null;
       }
-      isApplyingRemoteSnapshot = false;
-    }, error => {
-      isApplyingRemoteSnapshot = false;
-      console.error('Firestore live sync failed:', error);
-      isFirestoreReady = false;
-      showToast('Firestore unavailable. Using local data.');
-      refreshTasks(loadTasksFromStorage());
+
+      if (!currentUser) {
+        isFirestoreReady = false;
+        refreshTasks(loadTasksFromStorage());
+        return;
+      }
+
+      isFirestoreReady = true;
+      const collection = getFirestoreCollection();
+      firestoreUnsubscribe = collection.orderBy('order').onSnapshot(snapshot => {
+        isApplyingRemoteSnapshot = true;
+        const remoteTasks = snapshot.docs.map((doc, index) => normalizeTask({
+          __backendId: doc.id,
+          ...doc.data()
+        }, index));
+
+        if (remoteTasks.length) {
+          allTasks = remoteTasks;
+          cacheTasksLocally();
+          renderTasks();
+          setLastSavedNote(localStorage.getItem(LAST_SAVED_KEY));
+        } else if (allTasks.length) {
+          isApplyingRemoteSnapshot = false;
+          syncAllTasksToFirestore();
+        } else {
+          renderTasks();
+        }
+        isApplyingRemoteSnapshot = false;
+      }, error => {
+        isApplyingRemoteSnapshot = false;
+        console.error('Firestore live sync failed:', error);
+        isFirestoreReady = false;
+        showToast('Firestore unavailable. Using local data.');
+        refreshTasks(loadTasksFromStorage());
+      });
     });
 
     return true;
@@ -1820,6 +1933,35 @@ function initializeFirestoreSync() {
     isFirestoreReady = false;
     showToast('Firebase setup failed. Using local data.');
     return false;
+  }
+}
+
+async function signInWithGoogle() {
+  if (!authInstance) {
+    showToast('Firebase Auth is not ready yet');
+    return;
+  }
+
+  try {
+    const provider = new firebase.auth.GoogleAuthProvider();
+    await authInstance.signInWithPopup(provider);
+    showToast('Signed in with Google');
+  } catch (error) {
+    console.error('Google sign-in failed:', error);
+    showToast(error.code === 'auth/unauthorized-domain'
+      ? 'Authorize your GitHub Pages domain in Firebase Auth first'
+      : 'Google sign-in failed');
+  }
+}
+
+async function signOutUser() {
+  if (!authInstance) return;
+  try {
+    await authInstance.signOut();
+    showToast('Signed out');
+  } catch (error) {
+    console.error('Sign-out failed:', error);
+    showToast('Could not sign out');
   }
 }
 
