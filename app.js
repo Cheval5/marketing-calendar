@@ -16,7 +16,7 @@ const CAMPAIGN_TYPES = ['General','Product Launch','Seasonal','Trade Show','Emai
 const defaultConfig = {
   calendar_title: 'Marketing Calendar 2026',
   background_color: '#F5F5F5',
-  surface_color: '#EEF4F7',
+  surface_color: '#DFEEF6',
   text_color: '#4A4A49',
   primary_action_color: '#004E78',
   secondary_action_color: '#25A046',

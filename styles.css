@@ -611,7 +611,7 @@ body {
   border-radius: 14px;
   padding: 14px;
   border: 1px solid rgba(0, 78, 120, 0.12);
-  background: #eef4f7;
+  background: #dfeef6;
   box-shadow: 0 8px 24px rgba(0, 78, 120, 0.05);
   transition: box-shadow 0.2s, background 0.2s, border-color 0.2s;
 }
@@ -627,7 +627,7 @@ body {
 
 .month-title {
   font-weight: 700;
-  font-size: 13px;
+  font-size: 15px;
   text-transform: uppercase;
   letter-spacing: 1px;
   color: var(--cd-regal-blue);
