@@ -611,6 +611,7 @@ body {
   border-radius: 14px;
   padding: 14px;
   border: 1px solid rgba(0, 78, 120, 0.12);
+  background: #eef4f7;
   box-shadow: 0 8px 24px rgba(0, 78, 120, 0.05);
   transition: box-shadow 0.2s, background 0.2s, border-color 0.2s;
 }
