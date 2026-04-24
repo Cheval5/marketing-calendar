@@ -857,6 +857,14 @@
     </div>
     <div class="view-field">
      <div class="view-label">
+      Last Change
+     </div>
+     <div class="view-value" id="viewLastChange">
+      -
+     </div>
+    </div>
+    <div class="view-field">
+     <div class="view-label">
       Category Color
      </div>
      <div id="viewColor" style="width: 24px; height: 24px; border-radius: 50%; border: 2px solid #3a3f4e;"></div>
@@ -913,6 +921,12 @@ function formatSavedTime(value) {
   return `Last saved at ${date.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`;
 }
 
+function formatChangeTime(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+
 function setLastSavedNote(value) {
   const note = document.getElementById('lastSavedNote');
   if (!note) return;
@@ -946,6 +960,18 @@ function updateAuthUi() {
     actionBtn.textContent = 'Sign In With Google';
     actionBtn.setAttribute('onclick', 'signInWithGoogle()');
   }
+}
+
+function getCurrentActor() {
+  return currentUser?.email || currentUser?.displayName || currentUser?.uid || 'Unknown';
+}
+
+function getLastChangeLabel(task) {
+  const action = String(task.lastChangedAction || '').trim();
+  const by = String(task.lastChangedBy || '').trim();
+  const at = formatChangeTime(task.lastChangedAt);
+  if (!action && !by && !at) return '-';
+  return [action || 'Updated', by ? `by ${by}` : '', at ? `on ${at}` : ''].filter(Boolean).join(' ');
 }
 
 function generateId() {
@@ -1020,6 +1046,10 @@ function normalizeTask(task = {}, index = 0) {
     deleted: Boolean(task.deleted),
     deletedAt: String(task.deletedAt ?? '').trim(),
     deletedBy: String(task.deletedBy ?? '').trim(),
+    updatedAt: String(task.updatedAt ?? '').trim(),
+    lastChangedAt: String(task.lastChangedAt ?? '').trim(),
+    lastChangedBy: String(task.lastChangedBy ?? '').trim(),
+    lastChangedAction: String(task.lastChangedAction ?? '').trim(),
     color: typeof task.color === 'string' && task.color ? task.color : COLORS[0],
     date: String(task.date ?? '').trim(),
     status: Object.prototype.hasOwnProperty.call(task, 'status') ? normalizeStatus(task.status, STATUSES[0]) : STATUSES[0],
@@ -1109,9 +1139,18 @@ function getDeletedTasks() {
     .sort((a, b) => String(b.deletedAt || '').localeCompare(String(a.deletedAt || '')));
 }
 
-function upsertTask(updatedTask) {
-  const normalized = normalizeTask(updatedTask);
-  const nextTasks = allTasks.some(task => task.__backendId === normalized.__backendId)
+function upsertTask(updatedTask, actionOverride = '') {
+  const exists = allTasks.some(task => task.__backendId === String(updatedTask.__backendId ?? updatedTask.id ?? ''));
+  const timestamp = new Date().toISOString();
+  const action = actionOverride || (exists ? 'Updated' : 'Created');
+  const normalized = normalizeTask({
+    ...updatedTask,
+    updatedAt: timestamp,
+    lastChangedAt: timestamp,
+    lastChangedBy: getCurrentActor(),
+    lastChangedAction: action
+  });
+  const nextTasks = exists
     ? allTasks.map(task => task.__backendId === normalized.__backendId ? normalized : task)
     : [...allTasks, normalized];
 
@@ -1130,7 +1169,7 @@ function deleteTask(taskId) {
     deleted: true,
     deletedAt: new Date().toISOString(),
     deletedBy: currentUser?.email || currentUser?.uid || ''
-  });
+  }, 'Deleted');
   return true;
 }
 
@@ -1143,7 +1182,7 @@ function restoreTask(taskId) {
     deleted: false,
     deletedAt: '',
     deletedBy: ''
-  });
+  }, 'Restored');
   showToast('Campaign restored');
   return true;
 }
@@ -1639,7 +1678,7 @@ function buildGrid() {
       if (!requireSignedIn('reorder campaigns')) { dragId = null; return; }
       const task = allTasks.find(t => t.__backendId === dragId);
       if (task) {
-        upsertTask({ ...task, month: i, order: nextOrder(i) });
+        upsertTask({ ...task, month: i, order: nextOrder(i) }, 'Moved');
       }
       dragId = null;
     });
@@ -1817,6 +1856,7 @@ function openView(t) {
   document.getElementById('viewCampaignType').textContent = campaignTypesLabel || '-';
   document.getElementById('viewProducts').textContent = t.products && String(t.products).trim() ? String(t.products) : '-';
   document.getElementById('viewNotes').textContent = t.notes && String(t.notes).trim() ? String(t.notes) : '-';
+  document.getElementById('viewLastChange').textContent = getLastChangeLabel(t);
   document.getElementById('viewColor').style.background = t.color || COLORS[0];
   document.getElementById('viewOverlay').classList.add('open');
 }
@@ -1856,7 +1896,7 @@ function showToast(msg) {
 function escHtml(s) { const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
 
 function buildCSV() {
-  let csvContent = 'Month,Campaign Name,Date,Status,Priority,Owner,Budget,Campaign Types,Products,Notes,Category\n';
+  let csvContent = 'Month,Campaign Name,Date,Status,Priority,Owner,Budget,Campaign Types,Products,Notes,Last Change,Last Changed By,Last Changed At,Category\n';
   
   MONTHS.forEach((month, idx) => {
     const tasks = getActiveTasks().filter(t => t.month === idx).sort((a,b) => a.order - b.order);
@@ -1870,9 +1910,12 @@ function buildCSV() {
       const campaignTypes = normalizeCampaignTypes(t.campaignTypes ?? t.campaignType).join('; ');
       const products = t.products || '';
       const notes = t.notes || '';
+      const lastChangedAction = t.lastChangedAction || '';
+      const lastChangedBy = t.lastChangedBy || '';
+      const lastChangedAt = t.lastChangedAt || '';
       const colorName = getColorLabel(t.color || COLORS[0]);
       
-      csvContent += `"${csvEscape(month)}","${csvEscape(name)}","${csvEscape(date)}","${csvEscape(status)}","${csvEscape(priority)}","${csvEscape(owner)}","${csvEscape(budget)}","${csvEscape(campaignTypes)}","${csvEscape(products)}","${csvEscape(notes)}","${csvEscape(colorName)}"\n`;
+      csvContent += `"${csvEscape(month)}","${csvEscape(name)}","${csvEscape(date)}","${csvEscape(status)}","${csvEscape(priority)}","${csvEscape(owner)}","${csvEscape(budget)}","${csvEscape(campaignTypes)}","${csvEscape(products)}","${csvEscape(notes)}","${csvEscape(lastChangedAction)}","${csvEscape(lastChangedBy)}","${csvEscape(lastChangedAt)}","${csvEscape(colorName)}"\n`;
     });
   });
   return csvContent;
@@ -1982,6 +2025,9 @@ function importCalendar(event) {
       const campaignTypesIndex = getHeaderIndex(headers, ['campaign types', 'campaign type', 'types', 'type']);
       const productsIndex = getHeaderIndex(headers, ['products', 'product']);
       const notesIndex = getHeaderIndex(headers, ['notes', 'note']);
+      const lastChangedActionIndex = getHeaderIndex(headers, ['last change', 'last changed action', 'last action']);
+      const lastChangedByIndex = getHeaderIndex(headers, ['last changed by', 'changed by']);
+      const lastChangedAtIndex = getHeaderIndex(headers, ['last changed at', 'changed at']);
 
       const imported = rows
         .slice(1)
@@ -1999,6 +2045,10 @@ function importCalendar(event) {
           campaignTypes: getCsvValue(row, campaignTypesIndex, -1),
           products: getCsvValue(row, productsIndex, 3),
           notes: getCsvValue(row, notesIndex, 4),
+          lastChangedAction: getCsvValue(row, lastChangedActionIndex, -1) || 'Imported',
+          lastChangedBy: getCsvValue(row, lastChangedByIndex, -1) || getCurrentActor(),
+          lastChangedAt: getCsvValue(row, lastChangedAtIndex, -1) || new Date().toISOString(),
+          updatedAt: getCsvValue(row, lastChangedAtIndex, -1) || new Date().toISOString(),
           color: COLORS[index % COLORS.length],
           order: Date.now() + index
         }, index));
