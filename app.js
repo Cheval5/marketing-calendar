@@ -133,10 +133,39 @@ function formatDateInputValue(year, month, day) {
   return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
 
+function createLocalDate(year, month, day) {
+  const date = new Date(year, month, day);
+  return date.getFullYear() === year && date.getMonth() === month && date.getDate() === day ? date : null;
+}
+
+function parseDateOnly(value) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return null;
+
+  const isoMatch = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:\b|T)/);
+  if (isoMatch) {
+    return createLocalDate(
+      parseInt(isoMatch[1], 10),
+      parseInt(isoMatch[2], 10) - 1,
+      parseInt(isoMatch[3], 10)
+    );
+  }
+
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return createLocalDate(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
+}
+
+function normalizeDateValue(value) {
+  const raw = String(value ?? '').trim();
+  const parsed = parseDateOnly(raw);
+  return parsed ? formatDateInputValue(parsed.getFullYear(), parsed.getMonth(), parsed.getDate()) : raw;
+}
+
 function moveDateToMonth(value, month) {
   if (!value) return getDefaultDateForMonth(month);
-  const parsed = new Date(`${value}T00:00:00`);
-  if (Number.isNaN(parsed.getTime())) return getDefaultDateForMonth(month);
+  const parsed = parseDateOnly(value);
+  if (!parsed) return getDefaultDateForMonth(month);
 
   const year = parsed.getFullYear();
   const targetMonth = normalizeMonthValue(month);
@@ -151,8 +180,8 @@ function getDateForSelectedMonth(value, month) {
   const targetMonth = normalizeMonthValue(month);
   if (!value) return getDefaultDateForMonth(targetMonth);
 
-  const parsed = new Date(`${value}T00:00:00`);
-  if (Number.isNaN(parsed.getTime())) return getDefaultDateForMonth(targetMonth);
+  const parsed = parseDateOnly(value);
+  if (!parsed) return getDefaultDateForMonth(targetMonth);
   if (parsed.getMonth() === targetMonth) {
     return formatDateInputValue(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
   }
@@ -214,7 +243,7 @@ function normalizeTask(task = {}, index = 0) {
     lastChangedBy: String(task.lastChangedBy ?? '').trim(),
     lastChangedAction: String(task.lastChangedAction ?? '').trim(),
     color: typeof task.color === 'string' && task.color ? task.color : COLORS[0],
-    date: String(task.date ?? '').trim(),
+    date: normalizeDateValue(task.date),
     status: Object.prototype.hasOwnProperty.call(task, 'status') ? normalizeStatus(task.status, STATUSES[0]) : STATUSES[0],
     priority: Object.prototype.hasOwnProperty.call(task, 'priority') ? normalizePriority(task.priority, 'Medium') : 'Medium',
     owner: String(task.owner ?? '').trim(),
@@ -368,8 +397,8 @@ function initEditDateControls() {
     dateInput.value = getDateForSelectedMonth(dateInput.value, monthSelect.value);
   });
   dateInput.addEventListener('change', () => {
-    const parsed = new Date(`${dateInput.value}T00:00:00`);
-    if (!Number.isNaN(parsed.getTime())) {
+    const parsed = parseDateOnly(dateInput.value);
+    if (parsed) {
       monthSelect.value = String(parsed.getMonth());
     }
   });
@@ -737,15 +766,14 @@ function getColorLabel(color) {
 
 function formatCardDate(value) {
   if (!value) return '';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return String(value);
+  const date = parseDateOnly(value);
+  if (!date) return String(value);
   return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
 }
 
 function parseCampaignDate(value) {
   if (!value) return null;
-  const date = new Date(`${value}T00:00:00`);
-  return Number.isNaN(date.getTime()) ? null : date;
+  return parseDateOnly(value);
 }
 
 function getDaysUntil(date) {
