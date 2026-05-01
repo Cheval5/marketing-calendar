@@ -661,6 +661,14 @@ body {
   margin-bottom: 10px;
 }
 
+.task-list.drag-insert-end::after {
+  content: '';
+  height: 3px;
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px rgba(0, 167, 225, 0.14);
+}
+
 .task-card {
   border-radius: 10px;
   padding: 10px 12px;
@@ -681,6 +689,18 @@ body {
 .task-card.dragging {
   opacity: 0.4;
   transform: scale(0.95);
+}
+
+.task-card.drag-insert-before::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -6px;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px rgba(0, 167, 225, 0.14);
 }
 
 .task-card:hover {

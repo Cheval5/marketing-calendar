@@ -385,6 +385,65 @@ function nextOrder(month) {
   return Math.max(...monthTasks.map(task => Number(task.order) || 0)) + 1;
 }
 
+function getOrderedMonthTasks(month, excludeId = '') {
+  const normalizedMonth = normalizeMonthValue(month);
+  return getActiveTasks()
+    .filter(task => task.__backendId !== excludeId && normalizeMonthValue(task.month) === normalizedMonth)
+    .sort((a, b) => Number(a.order || 0) - Number(b.order || 0));
+}
+
+function getDropTargetCard(list, pointerY) {
+  const cards = Array.from(list.querySelectorAll('.task-card:not(.dragging)'));
+  return cards.find(card => {
+    const rect = card.getBoundingClientRect();
+    return pointerY < rect.top + rect.height / 2;
+  }) || null;
+}
+
+function getCardBefore(list, card) {
+  const cards = Array.from(list.querySelectorAll('.task-card:not(.dragging)'));
+  if (!card) return cards[cards.length - 1] || null;
+  const index = cards.indexOf(card);
+  return index > 0 ? cards[index - 1] : null;
+}
+
+function clearDragInsertMarkers() {
+  document.querySelectorAll('.task-card.drag-insert-before').forEach(card => card.classList.remove('drag-insert-before'));
+  document.querySelectorAll('.task-list.drag-insert-end').forEach(list => list.classList.remove('drag-insert-end'));
+}
+
+function updateDragInsertMarker(col, pointerY) {
+  const list = col.querySelector('.task-list');
+  if (!list) return;
+
+  clearDragInsertMarkers();
+  const targetCard = getDropTargetCard(list, pointerY);
+  if (targetCard) {
+    targetCard.classList.add('drag-insert-before');
+  } else {
+    list.classList.add('drag-insert-end');
+  }
+}
+
+function getOrderForDrop(month, draggedId, beforeId, afterId) {
+  const orderedTasks = getOrderedMonthTasks(month, draggedId);
+  const beforeTask = beforeId ? orderedTasks.find(task => task.__backendId === beforeId) : null;
+  const afterTask = afterId ? orderedTasks.find(task => task.__backendId === afterId) : null;
+  const beforeOrder = beforeTask ? Number(beforeTask.order || 0) : null;
+  const afterOrder = afterTask ? Number(afterTask.order || 0) : null;
+
+  if (Number.isFinite(beforeOrder) && Number.isFinite(afterOrder)) {
+    return (beforeOrder + afterOrder) / 2;
+  }
+  if (Number.isFinite(afterOrder)) {
+    return afterOrder - 1;
+  }
+  if (Number.isFinite(beforeOrder)) {
+    return beforeOrder + 1;
+  }
+  return nextOrder(month);
+}
+
 function initEditMonthOptions() {
   const select = document.getElementById('editMonth');
   select.innerHTML = MONTHS.map((month, index) => `<option value="${index}">${month}</option>`).join('');
@@ -874,20 +933,35 @@ function buildGrid() {
       <button class="add-btn" data-month="${i}" style="color:${defaultConfig.secondary_action_color};border-color:${defaultConfig.secondary_action_color}33;">+ Add Campaign</button>
     `;
     // Drag events
-    col.addEventListener('dragover', e => { e.preventDefault(); col.classList.add('drag-over'); });
-    col.addEventListener('dragleave', () => col.classList.remove('drag-over'));
+    col.addEventListener('dragover', e => {
+      e.preventDefault();
+      col.classList.add('drag-over');
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+      updateDragInsertMarker(col, e.clientY);
+    });
+    col.addEventListener('dragleave', e => {
+      if (e.relatedTarget && col.contains(e.relatedTarget)) return;
+      col.classList.remove('drag-over');
+      clearDragInsertMarkers();
+    });
     col.addEventListener('drop', async e => {
       e.preventDefault(); 
       col.classList.remove('drag-over');
+      const list = col.querySelector('.task-list');
+      const targetCard = list ? getDropTargetCard(list, e.clientY) : null;
+      const beforeCard = list ? getCardBefore(list, targetCard) : null;
+      clearDragInsertMarkers();
       if (!dragId) return;
       if (!requireSignedIn('reorder campaigns')) { dragId = null; return; }
       const task = allTasks.find(t => t.__backendId === dragId);
       if (task) {
+        const beforeId = beforeCard ? beforeCard.dataset.id : '';
+        const afterId = targetCard ? targetCard.dataset.id : '';
         upsertTask({
           ...task,
           month: i,
           date: moveDateToMonth(task.date, i),
-          order: nextOrder(i)
+          order: getOrderForDrop(i, task.__backendId, beforeId, afterId)
         }, 'Moved');
       }
       dragId = null;
@@ -970,8 +1044,16 @@ function createCard(t) {
   card.style.color = defaultConfig.text_color;
   card.innerHTML = renderCardMarkup(t);
 
-  card.addEventListener('dragstart', e => { dragId = t.__backendId; card.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; });
-  card.addEventListener('dragend', () => { card.classList.remove('dragging'); dragId = null; });
+  card.addEventListener('dragstart', e => {
+    dragId = t.__backendId;
+    card.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+  });
+  card.addEventListener('dragend', () => {
+    card.classList.remove('dragging');
+    clearDragInsertMarkers();
+    dragId = null;
+  });
   card.querySelector('.edit-btn').addEventListener('click', e => { e.stopPropagation(); openEdit(t); });
   card.querySelector('.view-btn').addEventListener('click', e => { e.stopPropagation(); openView(t); });
   card.querySelector('.del-btn').addEventListener('click', e => {
